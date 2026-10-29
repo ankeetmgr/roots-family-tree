@@ -6,7 +6,7 @@ import type { AuthChangeEvent, Session, User } from "@supabase/supabase-js";
 import { createClient } from "./lib/supabase";
 import DiscoverTrees from "./DiscoverTrees";
 import StoriesMemories from "./StoriesMemories";
-import PhotoArchive, { PersonPortrait } from "./PhotoArchive";
+import PhotoArchive, { PersonPhotoButton, PersonPortrait } from "./PhotoArchive";
 import Timeline from "./Timeline";
 import {
   ArrowDownRight,
@@ -1273,6 +1273,13 @@ export default function Home() {
                         <span className="hidden text-[10px] text-[#92998D] sm:block">
                           {person.years}
                         </span>
+                        <PersonPhotoButton
+                          person={person}
+                          treeId={treeId}
+                          signedIn={Boolean(user)}
+                          onPhotoPathChange={handlePersonPhotoChange}
+                          onRequestSignIn={() => setShowAuth(true)}
+                        />
                         <button
                           onClick={() => {
                             setSearch(person.name);
@@ -1386,6 +1393,13 @@ export default function Home() {
                             {person.role} · {person.place}
                           </p>
                         </div>
+                        <PersonPhotoButton
+                          person={person}
+                          treeId={treeId}
+                          signedIn={Boolean(user)}
+                          onPhotoPathChange={handlePersonPhotoChange}
+                          onRequestSignIn={() => setShowAuth(true)}
+                        />
                         {user && cloudConnected && (
                           <>
                             <button onClick={() => editPerson(person)} aria-label={`Edit ${person.name}`} className="rounded-lg p-2 text-[#899184] hover:bg-[#EFF3EB] hover:text-[#315B3F]"><Pencil size={16} /></button>

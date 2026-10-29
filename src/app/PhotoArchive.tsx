@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ChangeEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { Camera, ImagePlus, Trash2 } from "lucide-react";
 import { createClient } from "./lib/supabase";
 
@@ -49,6 +49,116 @@ export function PersonPortrait({ person, size = "large" }: { person: PhotoPerson
       style={imageUrl ? { backgroundImage: `url("${imageUrl}")`, backgroundPosition: "center", backgroundSize: "cover" } : undefined}
     >
       {!imageUrl && person.name.split(/\s+/).slice(0, 2).map((part) => part[0] ?? "").join("").toUpperCase()}
+    </div>
+  );
+}
+
+export function PersonPhotoButton({
+  person,
+  treeId,
+  signedIn,
+  onPhotoPathChange,
+  onRequestSignIn,
+}: {
+  person: PhotoPerson;
+  treeId: string | null;
+  signedIn: boolean;
+  onPhotoPathChange: (personId: string | number, path: string | null) => void;
+  onRequestSignIn: () => void;
+}) {
+  const supabase = useMemo(() => createClient(), []);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function uploadPhoto(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (!file || !treeId || !signedIn) return;
+    if (!ALLOWED_TYPES.includes(file.type)) {
+      setError("Choose a JPG, PNG, or WebP image.");
+      return;
+    }
+    if (file.size > MAX_PHOTO_BYTES) {
+      setError("This photo is larger than 8 MB.");
+      return;
+    }
+
+    setSaving(true);
+    setError("");
+    const previousPath = person.photoPath ?? null;
+    const extension = file.type === "image/jpeg" ? "jpg" : file.type.split("/")[1];
+    const path = `${treeId}/${person.id}/${crypto.randomUUID()}.${extension}`;
+    try {
+      const { error: uploadError } = await supabase.storage.from(BUCKET).upload(path, file, {
+        contentType: file.type,
+        upsert: false,
+        cacheControl: "3600",
+      });
+      if (uploadError) {
+        setError(`Could not upload photo: ${uploadError.message}. Check that the Roots photo migration is applied.`);
+        return;
+      }
+
+      const { error: updateError } = await supabase.from("people")
+        .update({ photo_path: path })
+        .eq("id", person.id)
+        .eq("tree_id", treeId);
+      if (updateError) {
+        await supabase.storage.from(BUCKET).remove([path]);
+        setError(`Could not attach the photo: ${updateError.message}`);
+        return;
+      }
+
+      onPhotoPathChange(person.id, path);
+      if (previousPath) {
+        const { error: removeError } = await supabase.storage.from(BUCKET).remove([previousPath]);
+        if (removeError) setError(`Photo updated, but the previous file could not be removed: ${removeError.message}`);
+      }
+    } catch (uploadError: unknown) {
+      setError(uploadError instanceof Error ? uploadError.message : "Could not upload this photo.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function choosePhoto() {
+    setError("");
+    if (!signedIn) {
+      onRequestSignIn();
+      return;
+    }
+    if (!treeId) {
+      setError("Create a family tree before adding a profile photo.");
+      return;
+    }
+    inputRef.current?.click();
+  }
+
+  return (
+    <div className="relative shrink-0">
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        onChange={(event) => void uploadPhoto(event)}
+        disabled={saving}
+        className="sr-only"
+        tabIndex={-1}
+        aria-hidden="true"
+      />
+      <button
+        type="button"
+        onClick={choosePhoto}
+        disabled={saving}
+        aria-label={`${person.photoPath ? "Change" : "Add"} profile photo for ${person.name}`}
+        title={person.photoPath ? "Change profile photo" : "Add profile photo"}
+        className="inline-flex items-center gap-1.5 rounded-lg border border-[#DFE3D9] px-2.5 py-2 text-[11px] font-semibold text-[#526452] hover:bg-[#EFF3EB] hover:text-[#315B3F] disabled:cursor-wait disabled:opacity-50"
+      >
+        <Camera size={14} />
+        <span>{saving ? "Uploading…" : person.photoPath ? "Change photo" : "Add photo"}</span>
+      </button>
+      {error && <span role="alert" className="absolute right-0 top-full z-20 mt-1 w-56 rounded-lg border border-rose-200 bg-white p-2 text-[10px] leading-4 text-rose-800 shadow-lg">{error}</span>}
     </div>
   );
 }
